@@ -1,50 +1,44 @@
-const { GObject, Clutter, GLib, St, PangoCairo, Pango } = imports.gi;
+import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
+import St from 'gi://St';
 
-const Cairo			 = imports.cairo;
-const ExtensionUtils = imports.misc.extensionUtils;
-const Main			 = imports.ui.main;
-const PanelMenu		 = imports.ui.panelMenu;
-const PopupMenu		 = imports.ui.popupMenu;
-const Me			 = imports.misc.extensionUtils.getCurrentExtension();
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
+import { Extension, gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
 
-const Gettext = imports.gettext.domain(Me.metadata['gettext-domain']);
-const _		  = Gettext.gettext;
+import { xClock } from './Clock.js';
 
 const debug = false;
-//~ const debug = true;
 function lg(s) {
-	if (debug) log("===" + Me.metadata['gettext-domain'] + "===>" + s);
+	if (debug) console.log("===cairo-clock===>" + s);
 }
-
-const xClock	 = Me.imports.Clock.xClock;
-const size	 = parseInt(Main.layoutManager.primaryMonitor.height/4);
-let xc			 = null;
-let pop_per_hour = false;  //整点弹出报时。
-let pt			 = null;
 
 const Indicator = GObject.registerClass(
 	class Indicator extends PanelMenu.Button {
-		_init() {
+		_init(size) {
 			super._init(0.0, _('Cairo Clock'));
 
+			this._size		  = size;
+			this.pop_per_hour = false;	//整点弹出报时。
+
 			this.add_child(new St.Icon({
-				icon_name : 'org.gnome.clocks-symbolic',	//fedora 36 & ubuntu 22.04
+				icon_name : 'org.gnome.clocks-symbolic',
 				style_class : 'system-status-icon',
 			}));
 
-			xc = new xClock(size);
-			Main.layoutManager.addChrome(xc);
-			xc.visible	= false;
-			xc.reactive = true;
+			this.clock = new xClock(size);
+			Main.layoutManager.addChrome(this.clock);
+			this.clock.visible = false;
 
-			this.width			  = 50;
-			this.background_color = Clutter.Color.from_string("#80808000")[1];
+			this.width = 50;
+			this._update_style();
 			this.connect("button-press-event", (actor, event) => {
 				const altkey  = event.get_state() & Clutter.ModifierType.MOD1_MASK;
 				const ctrlkey = event.get_state() & Clutter.ModifierType.CONTROL_MASK;
 				if (altkey) {
-					pop_per_hour		  = !pop_per_hour;
-					this.background_color = Clutter.Color.from_string(pop_per_hour ? "#C98A38" : "#80808000")[1];
+					this.pop_per_hour = !this.pop_per_hour;
+					this._update_style();
 					return Clutter.EVENT_STOP;
 				}
 				if (ctrlkey) {
@@ -52,11 +46,15 @@ const Indicator = GObject.registerClass(
 					return Clutter.EVENT_STOP;
 				}
 				const [x, y] = global.get_pointer();
-				xc.set_position(x - size / 2 + 10, y + 30);
-				xc.visible = !xc.visible;
-				this.ease_effect(xc);
+				this.clock.set_position(x - this._size / 2 + 10, y + 30);
+				this.clock.visible = !this.clock.visible;
+				this.ease_effect(this.clock);
 				return Clutter.EVENT_STOP;
 			});
+		}
+
+		_update_style() {  // Clutter.Color 已移除，用样式表设置背景色。
+			this.set_style(this.pop_per_hour ? 'background-color: #C98A38;' : null);
 		}
 
 		ease_effect(a) {  //直线位置动画，AnimationMode 只是时间间隔的变化。
@@ -75,7 +73,7 @@ const Indicator = GObject.registerClass(
 			} else {  //消失。
 				newOpacity = 10;
 				newScale   = 0.4;
-				newX	   = monitor.width - size * newScale;
+				newX	   = monitor.width - this._size * newScale;
 				a.visible  = true;	//强制显示，以产生动态。
 			}
 
@@ -102,60 +100,52 @@ const Indicator = GObject.registerClass(
 		alarm() {
 			const player = global.display.get_sound_player();
 			player.play_from_theme('complete', 'countdown', null);
-			xc.visible = true;
-			xc.swing();
+			this.clock.visible = true;
+			this.clock.swing();
 		}
 
 		destroy() {
-			Main.layoutManager.removeChrome(xc);
-			xc.destroy();
+			if (this.clock) {
+				Main.layoutManager.removeChrome(this.clock);
+				this.clock.destroy();
+				this.clock = null;
+			}
 			super.destroy();  // Extension point conflict if no destroy.
 		}
 	});
 
-let timeoutId = null;
-
-class Extension {
-	constructor(uuid) {
-		this._uuid = uuid;
-
-		ExtensionUtils.initTranslations();
-	}
-
+export default class CairoClockExtension extends Extension {
 	enable() {
-		timeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 10, () => {
-			const [h, m] = xc.get_alarm();
+		lg("start");
+		const size	   = Math.floor(Main.layoutManager.primaryMonitor.height / 4);
+		this._indicator = new Indicator(size);
+		Main.panel.addToStatusArea(this.uuid, this._indicator);
+
+		this._lastFired = -1;  //同一分钟内只响一次。
+		this._timeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 10, () => {
+			const [h, m] = this._indicator.clock.get_alarm();
 			const d0	 = new Date();
 			const m0	 = d0.getMinutes();
-			if (h && m) {
-				let h0 = d0.getHours();
-				h0 %= 12;
-				if (h == h0 && m == m0) this._indicator.alarm();
-			}
-			if (pop_per_hour) {	 //整点弹出报时
-				const s0 = d0.getSeconds();
-				if (m0 == 0 && s0 < 10)
-					//~ if(s0 < 10)//1分钟测试用
-					this._indicator.alarm();
+			if (this._lastFired == m0) return GLib.SOURCE_CONTINUE;
+
+			if (h !== null && m !== null && h % 12 == d0.getHours() % 12 && m == m0) {
+				this._lastFired = m0;
+				this._indicator.alarm();
+			} else if (this._indicator.pop_per_hour && m0 == 0) {  //整点弹出报时
+				this._lastFired = m0;
+				this._indicator.alarm();
 			}
 			return GLib.SOURCE_CONTINUE;
 		});
-		lg("start");
-		this._indicator = new Indicator();
-		Main.panel.addToStatusArea(this._uuid, this._indicator);
 	}
 
 	disable() {
-		if (timeoutId) {
-			GLib.Source.remove(timeoutId);
-			timeoutId = null;
-		}
 		lg("stop");
-		this._indicator.destroy();
+		if (this._timeoutId) {
+			GLib.Source.remove(this._timeoutId);
+			this._timeoutId = null;
+		}
+		this._indicator?.destroy();
 		this._indicator = null;
 	}
-}
-
-function init(meta) {
-	return new Extension(meta.uuid);
 }

@@ -6,6 +6,9 @@
 
 Cairo Clock for gnome-shell
 
+Ported to the GNOME 45+ ESM extension API (tested on GNOME Shell 50):
+`Clutter.Canvas` -> `St.DrawingArea`, `Clutter.Color` -> plain RGB values.
+
 Import from `cairo-timer`
 
 Click the clock face to set the alarm, click the center circle to enable the alarm.
@@ -25,5 +28,9 @@ In case of alarm, the clock will swing dynamically.
 如果闹钟响了，时钟会动态摆动。
 
 ![](screenshot.png)
+
+GNOME 50 (St.DrawingArea) rendering:
+
+![](screenshot-gnome50.png)
 
 Special thanks `Simon Schneegans`
