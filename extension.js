@@ -8,6 +8,7 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import { Extension, gettext as _ } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import { xClock } from './Clock.js';
+import { connectClick } from './compat.js';
 
 const debug = false;
 function lg(s) {
@@ -17,7 +18,7 @@ function lg(s) {
 const Indicator = GObject.registerClass(
 	class Indicator extends PanelMenu.Button {
 		_init(size) {
-			super._init(0.0, _('Cairo Clock'));
+			super._init(0.0, _('Cairo Clock'), true);	//不要菜单
 
 			this._size		  = size;
 			this.pop_per_hour = false;	//整点弹出报时。
@@ -33,23 +34,22 @@ const Indicator = GObject.registerClass(
 
 			this.width = 50;
 			this._update_style();
-			this.connect("button-press-event", (actor, event) => {
-				const altkey  = event.get_state() & Clutter.ModifierType.MOD1_MASK;
-				const ctrlkey = event.get_state() & Clutter.ModifierType.CONTROL_MASK;
+			connectClick(this, (button, state) => {
+				const altkey  = state & Clutter.ModifierType.MOD1_MASK;
+				const ctrlkey = state & Clutter.ModifierType.CONTROL_MASK;
 				if (altkey) {
 					this.pop_per_hour = !this.pop_per_hour;
 					this._update_style();
-					return Clutter.EVENT_STOP;
+					return;
 				}
 				if (ctrlkey) {
 					this.alarm();
-					return Clutter.EVENT_STOP;
+					return;
 				}
 				const [x, y] = global.get_pointer();
 				this.clock.set_position(x - this._size / 2 + 10, y + 30);
 				this.clock.visible = !this.clock.visible;
 				this.ease_effect(this.clock);
-				return Clutter.EVENT_STOP;
 			});
 		}
 

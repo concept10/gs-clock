@@ -7,6 +7,8 @@ import St from 'gi://St';
 
 import Cairo from 'cairo';
 
+import { connectClick } from './compat.js';
+
 // Clutter.Color 在 GNOME 48 被移除，这里直接用 0-1 的 RGB 数值。
 const COLORS = {
 	black : [ 0, 0, 0 ],
@@ -47,7 +49,7 @@ export const xClock = GObject.registerClass(
 			this.set_size(this._size, this._size);
 			this.connect('repaint', this.on_draw.bind(this));
 			this.connect('motion-event', this.hover.bind(this));
-			this.connect('button-press-event', this.click.bind(this));
+			connectClick(this, this.click.bind(this));
 			this.connect('destroy', this._onDestroy.bind(this));
 		}
 
@@ -82,8 +84,8 @@ export const xClock = GObject.registerClass(
 			return Clutter.EVENT_STOP;
 		}
 
-		click(actor, event) {
-			if (event.get_button() == 3) {	//右键隐藏
+		click(button) {
+			if (button == Clutter.BUTTON_SECONDARY) {  //右键隐藏
 				this.visible	  = false;
 				this.hover_degree = 0;
 				this.queue_repaint();

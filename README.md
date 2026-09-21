@@ -7,7 +7,9 @@
 Cairo Clock for gnome-shell
 
 Ported to the GNOME 45+ ESM extension API (tested on GNOME Shell 50):
-`Clutter.Canvas` -> `St.DrawingArea`, `Clutter.Color` -> plain RGB values.
+`Clutter.Canvas` -> `St.DrawingArea`, `Clutter.Color` -> plain RGB values,
+clicks via `Clutter.ClickGesture` (GNOME 48+ no longer delivers
+`button-press-event` to actors).
 
 Import from `cairo-timer`
 
