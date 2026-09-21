@@ -6,10 +6,16 @@
 
 Cairo Clock for gnome-shell
 
-Ported to the GNOME 45+ ESM extension API (tested on GNOME Shell 50):
-`Clutter.Canvas` -> `St.DrawingArea`, `Clutter.Color` -> plain RGB values,
-clicks via `Clutter.ClickGesture` (GNOME 48+ no longer delivers
-`button-press-event` to actors).
+**This is a maintained fork** of [eexpress/gs-clock](https://github.com/eexpress/gs-clock),
+whose last release supports GNOME Shell 44. The extension is ported here to the
+GNOME 45+ ESM extension API and runs on GNOME Shell 50: `Clutter.Canvas` ->
+`St.DrawingArea`, `Clutter.Color` -> plain RGB values, clicks via
+`Clutter.ClickGesture` (GNOME 48+ no longer delivers `button-press-event` to
+actors). See [CHANGELOG.md](CHANGELOG.md) for the full list, and
+[HACKING.md](HACKING.md) to build, test and port it further.
+
+Install from a checkout with `bash pack.bash`, then log out and back in —
+GNOME Shell only loads newly installed extensions at session start.
 
 Import from `cairo-timer`
 
@@ -35,4 +41,4 @@ GNOME 50 (St.DrawingArea) rendering:
 
 ![](screenshot-gnome50.png)
 
-Special thanks `Simon Schneegans`
+Original author: `eexpress`. Special thanks `Simon Schneegans`.
