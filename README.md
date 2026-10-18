@@ -1,29 +1,49 @@
-# gnome-shell-cairo
+# Cairo Clock for macOS
 
-[<img alt="" height="80" src="https://raw.githubusercontent.com/andyholmes/gnome-shell-extensions-badge/master/get-it-on-ego.svg?sanitize=true">](https://extensions.gnome.org/extension/4809/cairo-clock/)
+Native Swift port of the GNOME Shell extension, as a menu-bar app (macOS 13 or later).
 
----
+| GNOME Shell extension | macOS port |
+|---|---|
+| `PanelMenu.Button` in the top bar | `NSStatusItem` in the menu bar |
+| `Main.layoutManager.addChrome` actor | borderless floating `NSPanel` |
+| `Clutter.Canvas` + Cairo + Pango | `NSView` + Core Graphics + `NSAttributedString` |
+| `ease()` with `EASE_OUT_BOUNCE` | same bounce curve, driven by a timer |
+| `global.display.get_sound_player()` | `NSSound` |
 
-Cairo Clock for gnome-shell
+## Build and run
 
-Import from `cairo-timer`
+```bash
+cd macos
+swift run              # run directly
+./bundle.sh            # or build build/CairoClock.app, then copy it to /Applications
+```
 
-Click the clock face to set the alarm, click the center circle to enable the alarm.
+## Usage
 
-单击钟面设置闹钟，单击中心圆启用闹钟。
+Same as the extension, with optional appearance and effect settings:
 
-Alt + click on main icon, background of icon become green, this enable Popup per hour function.
+- Click the menu-bar clock to show or hide the clock.
+- Click the clock face to set the alarm, click the centre circle to enable it. Right-click hides the clock.
+- Option + click the menu-bar icon: icon turns orange, popup every hour.
+- Control + click the menu-bar icon: test the alarm.
+- Right-click the menu-bar icon to toggle the hourly alert or open Preferences.
+- The menu-bar clock is an analog dial by default. In Preferences, choose a
+  compact symbol or an analog dial with digital time; optionally show a
+  seconds hand.
+- Set the menu-bar click action to open the floating clock or a quick-clock
+  popover with a larger analog preview, date, local time, optional second time
+  zone, and alarm controls. Right-click also provides quick alarm actions.
+- Preferences lets you enable the minute pulse, alarm glow, and ripple effects,
+  or choose the Classic and Liquid Glass clock appearances. Choices are saved
+  between launches; Restore Defaults returns to the original appearance and
+  disables optional effects and hourly alerts.
+- For Liquid Glass, choose Clear, Frosted, or Tinted glass and an optional
+  None, Blue, Teal, Purple, or Amber tint. Choose Bounce, Fade, Zoom, Slide,
+  or Spin for the clock's show and hide animation.
+- Menu items and the status icon include VoiceOver labels and keyboard
+  shortcuts where applicable.
 
-Alt+点击主图标，图标背景变为绿色，启用每小时弹出报时功能。
+## Roadmap
 
-Ctrl + click on main icon, can test the alarm effect.
-
-Ctrl+点击主图标，能测试闹钟的动态效果。
-
-In case of alarm, the clock will swing dynamically.
-
-如果闹钟响了，时钟会动态摆动。
-
-![](screenshot.png)
-
-Special thanks `Simon Schneegans`
+See the [clock roadmap](docs/CLOCK-ROADMAP.md) for implementation details
+and compatibility notes.
