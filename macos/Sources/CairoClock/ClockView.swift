@@ -4,15 +4,33 @@ import AppKit
 /// instead of Cairo. The view is flipped so y grows downward, like Cairo, which
 /// keeps the drawing code a line-by-line match of `on_draw`.
 final class ClockView: NSView {
+	enum Appearance: String {
+		case classic
+		case liquidGlass
+	}
+
 	let size: CGFloat
 	private var maxR: CGFloat { size / 2 - size / 12 }
 	private var minR: CGFloat { size / 10 }
 
+	var clockAppearance: Appearance = .classic { didSet { needsDisplay = true } }
+	var minutePulseEnabled = false
+	var alarmGlowEnabled = false
+	var rippleEnabled = false
+
 	private(set) var alarm: (h: Int, m: Int)?
+	var isAlarmEnabled: Bool { alarmActive }
+	var hasAlarmTime: Bool { hasSelectedAlarmTime }
+	var alarmDescription: String {
+		guard hasSelectedAlarmTime else { return "No alarm set" }
+		let time = Self.degreeToTime(alarmDegree)
+		return String(format: "%02d:%02d", time.h, time.m)
+	}
 	private var hoverDegree = 0
 	private var alarmDegree = 0
 	private var isCenter = false
 	private var alarmActive = false
+	private var hasSelectedAlarmTime = false
 
 	private var rotateAngle: CGFloat = 0
 	private var swingTimer: Timer?
@@ -20,6 +38,11 @@ final class ClockView: NSView {
 	private var swingDirect = 1	// 顺时钟为1
 	private var swingMax: CGFloat = 10	// 每周期递减的最大角度，递减表现为阻尼。
 	private static let cosTable: [CGFloat] = [0.2588, 0.5, 0.7071, 0.866, 0.966, 1, 1, 0.966, 0.866, 0.7071, 0.5, 0.2588]	// cos函数 0-75度,+15递增
+	private var pulseStarted: Date?
+	private var glowStarted: Date?
+	private var rippleStarted: Date?
+	private var effectTimer: Timer?
+	private static let effectDuration: TimeInterval = 0.9
 
 	/// Appear/disappear animation, applied around the centre (Clutter pivot 0.5, 0.5).
 	var introScale: CGFloat = 1 { didSet { needsDisplay = true } }
@@ -27,6 +50,7 @@ final class ClockView: NSView {
 
 	/// Called on right click (右键隐藏).
 	var onHide: (() -> Void)?
+	var onAlarmChange: (() -> Void)?
 
 	init(size: CGFloat) {
 		self.size = size
@@ -81,9 +105,13 @@ final class ClockView: NSView {
 	override func mouseDown(with event: NSEvent) {
 		_ = updateCoords(event)
 		if !isCenter {
-			if !alarmActive { alarmDegree = hoverDegree }
+			if !alarmActive {
+				alarmDegree = hoverDegree
+				hasSelectedAlarmTime = true
+			}
 		} else {
 			alarmActive.toggle()
+			if alarmActive { hasSelectedAlarmTime = true }
 		}
 		if alarmActive {
 			alarm = Self.degreeToTime(alarmDegree)
@@ -92,6 +120,7 @@ final class ClockView: NSView {
 			alarm = nil
 		}
 		needsDisplay = true
+		onAlarmChange?()
 	}
 
 	override func rightMouseDown(with event: NSEvent) {
@@ -100,31 +129,57 @@ final class ClockView: NSView {
 		onHide?()
 	}
 
+	func toggleAlarmEnabled() {
+		guard hasSelectedAlarmTime else { return }
+		if alarmActive {
+			alarmActive = false
+			alarm = nil
+		} else {
+			alarmActive = true
+			alarm = Self.degreeToTime(alarmDegree)
+		}
+		needsDisplay = true
+		onAlarmChange?()
+	}
+
+	func clearAlarm() {
+		alarmActive = false
+		alarm = nil
+		alarmDegree = 0
+		hasSelectedAlarmTime = false
+		needsDisplay = true
+		onAlarmChange?()
+	}
+
 	// MARK: - Drawing
 
 	override func draw(_ dirtyRect: NSRect) {
 		guard let ctx = NSGraphicsContext.current?.cgContext else { return }
 		let backColor = NSColor(hex: 0xD3D3D3)	// "light gray"
-		let handColor = NSColor.black
+		let handColor = clockAppearance == .liquidGlass ? NSColor.labelColor : NSColor.black
 
 		ctx.clear(bounds)
 		ctx.translateBy(x: size / 2, y: size / 2)	// 窗口中心为坐标原点。
-		ctx.scaleBy(x: introScale, y: introScale)
+		let pulseProgress = effectProgress(since: pulseStarted)
+		let pulseScale = pulseProgress.map { 1 + 0.035 * sin(.pi * $0) } ?? 1
+		ctx.scaleBy(x: introScale * pulseScale, y: introScale * pulseScale)
 		ctx.rotate(by: introRotation * .pi / 180)
 		ctx.setLineCap(.round)
 		if swingTimer != nil { ctx.rotate(by: rotateAngle * .pi / 180) }
 
-		ctx.setFillColor(backColor.withAlphaComponent(0.8).cgColor)	// 底色
+		let faceOpacity: CGFloat = clockAppearance == .liquidGlass ? 0.12 : 0.8
+		ctx.setFillColor(backColor.withAlphaComponent(faceOpacity).cgColor)	// 底色
 		addCircle(ctx, radius: size / 2 - size / 20)
 		ctx.fillPath()
 		ctx.setLineWidth(size / 100)
-		ctx.setStrokeColor(handColor.cgColor)
+		ctx.setStrokeColor(handColor.withAlphaComponent(clockAppearance == .liquidGlass ? 0.65 : 1).cgColor)
 		addCircle(ctx, radius: size / 2 - size / 20)
 		ctx.strokePath()
 		ctx.setLineWidth(size / 200)
-		ctx.setStrokeColor(NSColor.white.cgColor)
+		ctx.setStrokeColor(NSColor.white.withAlphaComponent(clockAppearance == .liquidGlass ? 0.8 : 1).cgColor)
 		addCircle(ctx, radius: size / 2 - size / 7.5)
 		ctx.strokePath()
+		drawTransientEffects(ctx, now: Date())
 
 		ctx.saveGState()	// 刻度
 		for i in 0..<60 {
@@ -163,8 +218,8 @@ final class ClockView: NSView {
 			let t = Self.degreeToTime(hoverDegree)
 			drawText(Self.format(t.h, t.m), at: CGPoint(x: 0, y: size / 4), color: .red)
 		} else {
-			drawText(Self.format(h0, m0), at: CGPoint(x: 0, y: size / 6), color: .black)
-			drawText(h24 >= 12 ? "PM" : "AM", at: CGPoint(x: 0, y: size / 12), color: .black)
+			drawText(Self.format(h0, m0), at: CGPoint(x: 0, y: size / 6), color: handColor)
+			drawText(h24 >= 12 ? "PM" : "AM", at: CGPoint(x: 0, y: size / 12), color: handColor)
 		}
 
 		let at = Self.degreeToTime(alarmDegree)
@@ -183,6 +238,81 @@ final class ClockView: NSView {
 		ctx.setFillColor((alarmActive ? NSColor.blue : .red).cgColor)
 		addCircle(ctx, radius: size / 33)
 		ctx.fillPath()
+	}
+
+	func minuteChanged() {
+		guard minutePulseEnabled, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+		pulseStarted = Date()
+		startEffectTimer()
+	}
+
+	func clockAppeared() {
+		guard rippleEnabled, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+		rippleStarted = Date()
+		startEffectTimer()
+	}
+
+	func alarmEffectsStarted() {
+		if alarmGlowEnabled { glowStarted = Date() }
+		if rippleEnabled, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { rippleStarted = Date() }
+		startEffectTimer()
+	}
+
+	private func effectProgress(since start: Date?) -> CGFloat? {
+		guard let start else { return nil }
+		let progress = Date().timeIntervalSince(start) / Self.effectDuration
+		return progress < 1 ? CGFloat(max(0, progress)) : nil
+	}
+
+	private func drawTransientEffects(_ ctx: CGContext, now: Date) {
+		if let start = rippleStarted {
+			let progress = CGFloat(max(0, now.timeIntervalSince(start) / Self.effectDuration))
+			if progress < 1 {
+				let radius = size * (0.43 + 0.12 * progress)
+				ctx.setLineWidth(size / 90)
+				ctx.setStrokeColor(NSColor.systemTeal.withAlphaComponent(0.55 * (1 - progress)).cgColor)
+				addCircle(ctx, radius: radius)
+				ctx.strokePath()
+			} else {
+				rippleStarted = nil
+			}
+		}
+		if let start = glowStarted {
+			let progress = CGFloat(max(0, now.timeIntervalSince(start) / Self.effectDuration))
+			if progress < 1 {
+				ctx.saveGState()
+				ctx.setShadow(offset: .zero, blur: size / 18,
+					color: NSColor.systemOrange.withAlphaComponent(0.75 * (1 - progress)).cgColor)
+				ctx.setLineWidth(size / 55)
+				ctx.setStrokeColor(NSColor.systemOrange.withAlphaComponent(0.8 * (1 - progress)).cgColor)
+				addCircle(ctx, radius: size / 2 - size / 24)
+				ctx.strokePath()
+				ctx.restoreGState()
+			} else {
+				glowStarted = nil
+			}
+		}
+		if let start = pulseStarted, now.timeIntervalSince(start) / Self.effectDuration >= 1 {
+			pulseStarted = nil
+		}
+	}
+
+	private func startEffectTimer() {
+		needsDisplay = true
+		guard effectTimer == nil else { return }
+		effectTimer = Timer.scheduledTimer(timeInterval: 1.0 / 60, target: self,
+			selector: #selector(effectTick), userInfo: nil, repeats: true)
+	}
+
+	@objc private func effectTick() {
+		if effectProgress(since: pulseStarted) == nil { pulseStarted = nil }
+		if effectProgress(since: glowStarted) == nil { glowStarted = nil }
+		if effectProgress(since: rippleStarted) == nil { rippleStarted = nil }
+		needsDisplay = true
+		if pulseStarted == nil, glowStarted == nil, rippleStarted == nil {
+			effectTimer?.invalidate()
+			effectTimer = nil
+		}
 	}
 
 	private func addCircle(_ ctx: CGContext, center: CGPoint = .zero, radius: CGFloat) {
