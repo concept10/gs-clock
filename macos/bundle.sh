@@ -3,12 +3,17 @@
 set -e
 cd "$(dirname "$0")"
 
-swift build -c release
+# Usage: ./bundle.sh [release|debug]   (default: release)
+config=${1:-release}
+case "$config" in release|debug) ;; *) echo "Usage: $0 [release|debug]" >&2; exit 1 ;; esac
 
-app=build/CairoClock.app
+swift build -c "$config"
+
+app=build/CairoClock-$config.app
+[ "$config" = release ] && app=build/CairoClock.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
-cp .build/release/CairoClock "$app/Contents/MacOS/"
+cp ".build/$config/CairoClock" "$app/Contents/MacOS/"
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

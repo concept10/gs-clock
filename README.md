@@ -14,9 +14,12 @@ Native Swift port of the GNOME Shell extension, as a menu-bar app (macOS 13 or l
 
 ```bash
 cd macos
-swift run              # run directly
-./bundle.sh            # or build build/CairoClock.app, then copy it to /Applications
+swift run              # quick debug run (bare executable)
+./bundle.sh            # release app: build/CairoClock.app, copy it to /Applications
+./bundle.sh debug      # debug app: build/CairoClock-debug.app
 ```
+
+See [docs/BUILDING.md](docs/BUILDING.md) for which artifact to use.
 
 ## Usage
 
@@ -38,8 +41,14 @@ Same as the extension, with optional appearance and effect settings:
   between launches; Restore Defaults returns to the original appearance and
   disables optional effects and hourly alerts.
 - For Liquid Glass, choose Clear, Frosted, or Tinted glass and an optional
-  None, Blue, Teal, Purple, or Amber tint. Choose Bounce, Fade, Zoom, Slide,
-  or Spin for the clock's show and hide animation.
+  None, Blue, Teal, Purple, or Amber tint.
+- Design the show and hide animations in the Preferences > Animations tab:
+  a left-to-right node graph (Trigger → Fade/Scale/Spin/Slide/
+  Flip/Wobble/Shake/Pop/Orbit nodes → Clock) with per-node duration, delay, easing, amount and slide
+  direction. Load Bounce, Fade, Zoom, Slide, Spin, Flip, Wobble, Shake, Pop, or Orbit as a starting preset and
+  use Preview to play it.
+- Pick any installed font family (or the System font) for the clock face text;
+  the default is Georgia.
 - Menu items and the status icon include VoiceOver labels and keyboard
   shortcuts where applicable.
 

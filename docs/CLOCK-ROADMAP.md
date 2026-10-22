@@ -310,3 +310,15 @@ clock face to hide it, alarm setting and firing, hourly alerts, saved
 preferences, menu-bar indicator legibility at every density, VoiceOver and
 keyboard access, optional seconds updates, popover time-zone display, and
 operation on the minimum supported macOS version.
+
+## Animation designer
+
+Show and hide animations are a node graph edited from Preferences > Animations
+tab. Each trigger (Show, Hide) is a left-to-right chain of
+Fade, Scale, Spin, Slide, Flip, Wobble, Shake, Pop and Orbit nodes feeding the Clock. Nodes start together at the
+trigger, so use Delay to stagger them; each has duration, easing (Linear, Ease
+out, Ease in-out, Bounce), an amount and, for Slide, a direction. The graph is
+stored as JSON in the `animationGraph` default (`AnimationGraph.swift`); the
+ten transitions are available as presets. Possible follow-ups:
+free-form branching wires, effect nodes (pulse, glow, ripple), and
+import/export of designs.

@@ -14,6 +14,9 @@ final class ClockView: NSView {
 	private var minR: CGFloat { size / 10 }
 
 	var clockAppearance: Appearance = .classic { didSet { needsDisplay = true } }
+	static let systemFontFamily = "System"
+	static let defaultFontFamily = "Georgia"
+	var fontFamily = ClockView.defaultFontFamily { didSet { needsDisplay = true } }
 	var minutePulseEnabled = false
 	var alarmGlowEnabled = false
 	var rippleEnabled = false
@@ -47,6 +50,7 @@ final class ClockView: NSView {
 	/// Appear/disappear animation, applied around the centre (Clutter pivot 0.5, 0.5).
 	var introScale: CGFloat = 1 { didSet { needsDisplay = true } }
 	var introRotation: CGFloat = 0 { didSet { needsDisplay = true } }
+	var introFlip: CGFloat = 1 { didSet { needsDisplay = true } }
 
 	/// Called on right click (右键隐藏).
 	var onHide: (() -> Void)?
@@ -164,6 +168,7 @@ final class ClockView: NSView {
 		let pulseScale = pulseProgress.map { 1 + 0.035 * sin(.pi * $0) } ?? 1
 		ctx.scaleBy(x: introScale * pulseScale, y: introScale * pulseScale)
 		ctx.rotate(by: introRotation * .pi / 180)
+		ctx.scaleBy(x: introFlip, y: 1)
 		ctx.setLineCap(.round)
 		if swingTimer != nil { ctx.rotate(by: rotateAngle * .pi / 180) }
 
@@ -338,7 +343,15 @@ final class ClockView: NSView {
 
 	/// Port of align_show(): text centred horizontally, top edge at `p`.
 	private func drawText(_ text: String, at p: CGPoint, color: NSColor) {
-		let font = NSFont(name: "Georgia-Bold", size: size / 25) ?? .boldSystemFont(ofSize: size / 25)
+		let pointSize = size / 25
+		let font: NSFont
+		if fontFamily == ClockView.systemFontFamily {
+			font = .systemFont(ofSize: pointSize, weight: .bold)
+		} else {
+			font = NSFontManager.shared.font(withFamily: fontFamily, traits: .boldFontMask, weight: 9, size: pointSize)
+				?? NSFont(name: fontFamily, size: pointSize)
+				?? .boldSystemFont(ofSize: pointSize)
+		}
 		let s = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
 		s.draw(at: CGPoint(x: p.x - s.size().width / 2, y: p.y))
 	}

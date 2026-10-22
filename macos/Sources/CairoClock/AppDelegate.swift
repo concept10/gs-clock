@@ -20,7 +20,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	private var alarmTimer: Timer?
 	private var statusClockTimer: Timer?
 	private var lastCheckedMinute: Date?
-	private var transitionStyle = TransitionStyle.bounce
 	private var menuBarDensity = MenuBarClockDensity.analog
 	private var menuBarShowsSeconds = false
 	private var secondaryTimeZone = ""
@@ -32,7 +31,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		static let alarmGlow = "alarmGlowEnabled"
 		static let ripple = "rippleEnabled"
 		static let appearance = "clockAppearance"
-		static let transition = "clockTransition"
 		static let glassStyle = "glassStyle"
 		static let glassTint = "glassTint"
 		static let menuBarDensity = "menuBarClockDensity"
@@ -41,29 +39,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		static let clickAction = "menuBarClickAction"
 	}
 
-	private enum TransitionStyle: String, CaseIterable {
-		case bounce
-		case fade
-		case zoom
-		case slide
-		case spin
-
-		var title: String {
-			switch self {
-			case .bounce: "Bounce"
-			case .fade: "Fade"
-			case .zoom: "Zoom"
-			case .slide: "Slide"
-			case .spin: "Spin"
-			}
-		}
-	}
-
 	private var animTimer: Timer?
 	private var animStart = Date()
-	private var animStep: ((CGFloat) -> Void)?
+	private var animStep: ((Double) -> Void)?
 	private var animDone: (() -> Void)?
-	private var usesBounce = false
+	private var animDuration = 0.0
 
 	static func main() {
 		let app = NSApplication.shared
@@ -151,80 +131,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		clock.clockAppeared()
 		let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
 			?? NSRect(origin: origin, size: panel.frame.size)
-		let startX = slideOffsetX(from: origin.x, visibleFrame: visibleFrame)
-		switch transitionStyle {
-		case .bounce:
-			panel.alphaValue = 10 / 255
-			clock.introScale = 0.1
-			clock.introRotation = 360
-		case .fade:
-			panel.alphaValue = 10 / 255
-			clock.introScale = 1
-			clock.introRotation = 0
-		case .zoom:
-			panel.alphaValue = 1
-			clock.introScale = 0.1
-			clock.introRotation = 0
-		case .slide:
-			panel.alphaValue = 1
-			panel.setFrameOrigin(NSPoint(x: startX, y: origin.y))
-			clock.introScale = 1
-			clock.introRotation = 0
-		case .spin:
-			panel.alphaValue = 1
-			clock.introScale = 0.75
-			clock.introRotation = 360
-		}
-		animate({ t in
-			switch self.transitionStyle {
-			case .bounce:
-				self.panel.alphaValue = 10 / 255 + (1 - 10 / 255) * t
-				self.clock.introScale = 0.1 + 0.9 * t
-				self.clock.introRotation = 360 * (1 - t)
-			case .fade:
-				self.panel.alphaValue = 10 / 255 + (1 - 10 / 255) * t
-			case .zoom:
-				self.clock.introScale = 0.1 + 0.9 * t
-			case .slide:
-				self.panel.setFrameOrigin(NSPoint(x: startX + (origin.x - startX) * t, y: origin.y))
-			case .spin:
-				self.clock.introScale = 0.75 + 0.25 * t
-				self.clock.introRotation = 360 * (1 - t)
-			}
-		}, completion: {}, usesBounce: transitionStyle == .bounce)
+		let sign: CGFloat = slideOffsetX(from: origin.x, visibleFrame: visibleFrame) > origin.x ? 1 : -1
+		let graph = AnimationGraph.load()
+		animate(duration: graph.totalDuration(for: .show), step: { time in
+			let pose = graph.pose(for: .show, at: time, slideSign: sign, size: self.size)
+			self.apply(pose, origin: origin)
+		}, completion: {})
 	}
 
 	private func hidePanel() {
 		let start = panel.frame.origin
 		let visibleFrame = (panel.screen ?? NSScreen.main)?.visibleFrame
 			?? NSRect(origin: start, size: panel.frame.size)
-		let targetX = visibleFrame.maxX
-		let slideX = slideOffsetX(from: start.x, visibleFrame: visibleFrame)
-		clock.introScale = 1
-		clock.introRotation = 0
-		animate({ t in
-			switch self.transitionStyle {
-			case .bounce:
-				self.panel.setFrameOrigin(NSPoint(x: start.x + (targetX - self.size * 0.4 - start.x) * t, y: start.y))
-				self.panel.alphaValue = 1 - (1 - 10 / 255) * t
-				self.clock.introScale = 1 - 0.6 * t
-			case .fade:
-				self.panel.alphaValue = 1 - (1 - 10 / 255) * t
-			case .zoom:
-				self.clock.introScale = 1 - 0.9 * t
-			case .slide:
-				self.panel.setFrameOrigin(NSPoint(x: start.x + (slideX - start.x) * t, y: start.y))
-			case .spin:
-				self.clock.introScale = 1 - 0.25 * t
-				self.clock.introRotation = -360 * t
-			}
+		let sign: CGFloat = slideOffsetX(from: start.x, visibleFrame: visibleFrame) > start.x ? 1 : -1
+		let graph = AnimationGraph.load()
+		animate(duration: graph.totalDuration(for: .hide), step: { time in
+			let pose = graph.pose(for: .hide, at: time, slideSign: sign, size: self.size)
+			self.apply(pose, origin: start)
 		}, completion: {
 			self.panel.orderOut(nil)
 			self.panel.alphaValue = 1	// 及时恢复透明度。
 			self.clock.introScale = 1	// 恢复比率，否则闹钟变小。
 			self.clock.introRotation = 0
+			self.clock.introFlip = 1
 			self.panel.setFrameOrigin(start)	// 恢复位置，否则闹钟乱跑。
-		}, usesBounce: transitionStyle == .bounce)
+		})
+	}
+
+	private func apply(_ pose: AnimationPose, origin: NSPoint) {
+		panel.alphaValue = pose.alpha
+		clock.introScale = pose.scale
+		clock.introRotation = pose.rotation
+		clock.introFlip = pose.flipX
+		panel.setFrameOrigin(NSPoint(x: origin.x + pose.offsetX, y: origin.y + pose.offsetY))
 	}
 
 	private func slideOffsetX(from x: CGFloat, visibleFrame: NSRect) -> CGFloat {
@@ -232,48 +171,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		return right > x ? right : max(x - size * 0.8, visibleFrame.minX)
 	}
 
-	private func animate(_ step: @escaping (CGFloat) -> Void, completion: @escaping () -> Void,
-			usesBounce: Bool = false) {
+	private func animate(duration: Double, step: @escaping (Double) -> Void, completion: @escaping () -> Void) {
 		finishAnimation()
+		step(0)
+		guard duration > 0 else {
+			step(0)
+			completion()
+			return
+		}
 		animStep = step
 		animDone = completion
+		animDuration = duration
 		animStart = Date()
-		self.usesBounce = usesBounce
-		step(0)
 		animTimer = Timer.scheduledTimer(timeInterval: 1.0 / 60, target: self,
 			selector: #selector(animTick), userInfo: nil, repeats: true)
 	}
 
 	@objc private func animTick() {
-		let p = CGFloat(min(Date().timeIntervalSince(animStart), 1))	// duration 1s
-		animStep?(usesBounce ? Self.easeOutBounce(p) : Self.easeOutCubic(p))
-		if p >= 1 { finishAnimation() }
+		let elapsed = Date().timeIntervalSince(animStart)
+		animStep?(min(elapsed, animDuration))
+		if elapsed >= animDuration { finishAnimation() }
 	}
 
 	private func finishAnimation() {
 		guard let timer = animTimer else { return }
 		timer.invalidate()
 		animTimer = nil
-		animStep?(1)
-		usesBounce = false
+		animStep?(animDuration)
 		let done = animDone
 		animStep = nil
 		animDone = nil
 		done?()
 	}
 
-	/// Same curve as Clutter.AnimationMode.EASE_OUT_BOUNCE.
-	static func easeOutBounce(_ t: CGFloat) -> CGFloat {
-		let n: CGFloat = 7.5625, d: CGFloat = 2.75
-		if t < 1 / d { return n * t * t }
-		if t < 2 / d { let t = t - 1.5 / d; return n * t * t + 0.75 }
-		if t < 2.5 / d { let t = t - 2.25 / d; return n * t * t + 0.9375 }
-		let t = t - 2.625 / d
-		return n * t * t + 0.984375
-	}
-
-	private static func easeOutCubic(_ t: CGFloat) -> CGFloat {
-		1 - pow(1 - t, 3)
+	private func previewAnimation(_ trigger: AnimationTrigger) {
+		switch trigger {
+		case .show:
+			if panel.isVisible { finishAnimation(); panel.orderOut(nil) }
+			showPanel()
+		case .hide:
+			if panel.isVisible {
+				hidePanel()
+			} else {
+				showPanel()
+				let wait = AnimationGraph.load().totalDuration(for: .show) + 0.6
+				DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+					guard let self, self.panel.isVisible else { return }
+					self.hidePanel()
+				}
+			}
+		}
 	}
 
 	// MARK: - Alarm
@@ -341,6 +288,10 @@ hourlyAlertMenuItem = NSMenuItem(title: "Hourly Alert", action: #selector(toggle
 	preferencesItem.keyEquivalent = ","
 	preferencesItem.keyEquivalentModifierMask = [.command]
 	menu.addItem(preferencesItem)
+	menu.addItem(.separator())
+	let quitItem = NSMenuItem(title: "Quit Cairo Clock", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+	quitItem.target = NSApp
+	menu.addItem(quitItem)
 	menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY), in: button)
 }
 
@@ -495,8 +446,6 @@ private func applyPreferences() {
 	clock.minutePulseEnabled = defaults.bool(forKey: PreferenceKey.minutePulse)
 	clock.alarmGlowEnabled = defaults.bool(forKey: PreferenceKey.alarmGlow)
 	clock.rippleEnabled = defaults.bool(forKey: PreferenceKey.ripple)
-	transitionStyle = TransitionStyle(rawValue: defaults.string(forKey: PreferenceKey.transition) ?? "")
-		?? .bounce
 	let appearance = ClockView.Appearance(rawValue: defaults.string(forKey: PreferenceKey.appearance) ?? "")
 		?? .classic
 	let glassStyle = ClockPanelView.GlassStyle(rawValue: defaults.string(forKey: PreferenceKey.glassStyle) ?? "")
@@ -508,6 +457,7 @@ private func applyPreferences() {
 	menuBarShowsSeconds = defaults.bool(forKey: PreferenceKey.menuBarShowsSeconds)
 	secondaryTimeZone = defaults.string(forKey: PreferenceKey.secondaryTimeZone) ?? ""
 	clickAction = defaults.string(forKey: PreferenceKey.clickAction) ?? "clock"
+	clock.fontFamily = defaults.string(forKey: "clockFontFamily") ?? ClockView.defaultFontFamily
 	panelView.setAppearance(appearance, glassStyle: glassStyle, glassTint: glassTint)
 	updateMenuBarClock()
 	updateStatusClockTimer()
@@ -524,11 +474,13 @@ private func applyPreferences() {
 }
 
 private func createPreferencesWindow() {
-	let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 600),
+	let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 640),
 		styleMask: [.titled, .closable], backing: .buffered, defer: false)
 	window.title = "Cairo Clock Preferences"
 	window.isReleasedWhenClosed = false
-	let host = NSHostingController(rootView: ClockPreferencesView { [weak self] in self?.applyPreferences() })
+	let host = NSHostingController(rootView: ClockPreferencesRootView(
+		onChange: { [weak self] in self?.applyPreferences() },
+		onPreview: { [weak self] in self?.previewAnimation($0) }))
 	window.contentViewController = host
 	preferencesWindow = window
 }
